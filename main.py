@@ -1,24 +1,28 @@
+import numpy as np
+
+
 class Tokenizer:
     def __init__(self, text: str):
         self.text: str = text.lower().strip()
 
-    def by_words(self) -> list:
-        return self.text.split()
+    def by_words(self) -> np.array:
+        return np.array(self.text.split())
 
-    def by_char(self):
+    def by_chars(self):
         chars = []
         for word in self.text.split():
             chars.extend(list(word))
+            chars.append(" ")
         return chars
 
 
 class Vocab:
-    def __init__(self, tokens: list[str]):
+    def __init__(self, tokens: np.array):
         self.tokens = tokens
-        self.vocabulary: dict[str, int] = {"<UNK>": -1}
+        self.vocabulary: dict[str, int] = {"<UNK>": 0}
 
     def create(self):
-        id = 1
+        id = len(self.vocabulary)
         for token in self.tokens:
             if token not in self.vocabulary:
                 self.vocabulary[token] = id
@@ -28,17 +32,17 @@ class Vocab:
 
 
 class Embeddings:
-    def __init__(self, tokens: list[str], vocab: dict[str, int]):
+    def __init__(self, tokens: np.array, vocab: dict[str, int]):
         self.vocab = vocab
         self.tokens = tokens
-        self.embeddings = []
+        self.embeddings = np.array([])
 
-    def create(self):
+    def create(self) -> np.array:
         for token in self.tokens:
             if token not in self.vocab:
-                self.embeddings.append(-1)
+                self.embeddings = np.append(self.embeddings, self.vocab["<UNK>"])
             else:
-                self.embeddings.append(self.vocab[token])
+                self.embeddings = np.append(self.embeddings, self.vocab[token])
 
         return self.embeddings
 
@@ -50,8 +54,7 @@ Kwanza neno ni umbo lenye maana ambalo lina nafasi pande mbili. Neno ni silabi a
 if __name__ == "__main__":
     tokens = Tokenizer(text).by_words()
     vocabulary = Vocab(tokens).create()
-    print(vocabulary)
-    test = "umbo ambalo lina nafasi mbili"
-    test_tokens = Tokenizer(test).by_words()
-    embeddings = Embeddings(test_tokens, vocabulary).create()
-    print(embeddings)
+    test_str = "maneno ya maana"
+    test_tokens = Tokenizer(test_str).by_words()
+    print(vocabulary, "\n", test_tokens)
+    print(Embeddings(test_tokens, vocabulary).create())
