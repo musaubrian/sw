@@ -48,9 +48,9 @@ class Embeddings:
 
 
 class Neuron:
-    def __init__(self, input_dim, hidden_dim):
-        self.W_in = np.random.randn(hidden_dim, input_dim)  # Input weights
-        self.W_hidden = np.random.randn(hidden_dim, hidden_dim)  # Hidden state weights
+    def __init__(self, input_dim: int, hidden_dim: int, factor: float):
+        self.W_in = np.random.randn(hidden_dim, input_dim) * factor
+        self.W_hidden = np.random.randn(hidden_dim, hidden_dim) * factor
         self.b = np.zeros((hidden_dim,))
 
     def step(self, input_token, previous_hidden_state):
@@ -62,40 +62,71 @@ class Neuron:
 
 
 class SRNN:
-    def __init__(self):
-        self.weights = np.array([])
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int,
+        output_dim: int,
+        factor: float = 0.05,
+    ):
+        self.W_in = np.random.randn(hidden_dim, input_dim) * factor
+        self.W_hidden = np.random.randn(hidden_dim, hidden_dim) * factor
+        self.W_out = np.random.randn(output_dim, hidden_dim) * factor
+        self.hidden_state = np.zeros((hidden_dim,))
+        self.neuron = Neuron(input_dim, hidden_dim, factor)
 
-    def forward(self):
-        pass
+    def forward(self, input_tokens):
+        for token_id in input_tokens:
+            input_vector = np.zeros((self.W_in.shape[1],))
+            input_vector[token_id] = 1
+            self.hidden_state = self.neuron.step(input_vector, self.hidden_state)
 
     def predict_next(self):
-        pass
+        raw_output = self.W_out @ self.hidden_state
+        probabilities = softmax(raw_output)
+        next_token_index = np.argmax(probabilities)
+
+        return next_token_index
 
 
-text = """Aina za maneno ni dhana au maana ya neno/maneno. Pia aina za maneno huhusisha mgawanyo wa maneno hayo kulingana na matumizi yake.
+def softmax(x):
+    """Compute softmax values for each sets of scores in x."""
+    exp_x = np.exp(x - np.max(x))
+    return exp_x / np.sum(exp_x, axis=0)
 
-Kwanza neno ni umbo lenye maana ambalo lina nafasi pande mbili. Neno ni silabi au mkusanyo wa silabi wenye kubeba au kuleta maana fulani."""
+
+def get_key_by_value(dictionary, value):
+    for key, val in dictionary.items():
+        if val == value:
+            return key
+    return None
+
+
+def load_base_text(file: str) -> str:
+    text = ""
+    with open(file, "r") as f:
+        text = f.read()
+
+    return text
+
 
 if __name__ == "__main__":
+    text = load_base_text("./sw.txt")
     tokens = Tokenizer(text).by_words()
     vocabulary = Vocab(tokens).create()
-    test_str = "maneno ya maana"
-    test_tokens = Tokenizer(test_str).by_words()
-    print(vocabulary, "\n", test_tokens)
-    embedded_test_tokens = Embeddings(test_tokens, vocabulary).create()
-    print(embedded_test_tokens)
-
     input_dim = len(vocabulary)
-    hidden_dim = 3
-    neuron = Neuron(input_dim, hidden_dim)
-    hidden_state = np.zeros((hidden_dim,))
+    hidden_dim = 5
 
-    for token_embedding in embedded_test_tokens:
-        # Convert token index to a one-hot vector
-        input_vector = np.zeros((input_dim,))
-        if int(token_embedding) != -1:
-            input_vector[token_embedding] = 1
+    while True:
+        sample = input("> ")
+        if sample == "q":
+            break
 
-        # Pass through RNN step function
-        hidden_state = neuron.step(input_vector, hidden_state)
-        print("New Hidden State:", hidden_state)
+        test_tokens = Tokenizer(sample).by_words()
+        embedded_test_tokens = Embeddings(test_tokens, vocabulary).create()
+
+        rnn = SRNN(input_dim, hidden_dim, input_dim)
+        rnn.forward(embedded_test_tokens)
+        next_token = rnn.predict_next()
+        next_word = get_key_by_value(vocabulary, next_token)
+        print(f"{sample} {next_word}")
