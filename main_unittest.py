@@ -1,4 +1,5 @@
 import unittest
+from string import punctuation
 from main import Tokenizer, Embeddings, Vocab
 
 
@@ -7,8 +8,15 @@ tokenized_words = Tokenizer(base_text).by_words()
 tokenized_chars = Tokenizer(base_text).by_chars()
 
 
+def contains_punctuation(input_list):
+    for item in input_list:
+        if any(char in punctuation for char in str(item)):
+            return True
+        return False
+
+
 class TestTokenizer(unittest.TestCase):
-    expected_char_count = 31
+    expected_char_count = 30
     expected_word_count = 5
 
     def test_char_count(self):
@@ -23,6 +31,9 @@ class TestTokenizer(unittest.TestCase):
             len(tokenized_words),
             self.expected_word_count,
         )
+
+    def test_punctuation_strip(self):
+        self.assertFalse(contains_punctuation(tokenized_words))
 
 
 class TestVocab(unittest.TestCase):

@@ -1,4 +1,5 @@
 import numpy as np
+import re
 
 
 class Tokenizer:
@@ -6,13 +7,16 @@ class Tokenizer:
         self.text: str = text.lower().strip()
 
     def by_words(self) -> np.array:
-        return np.array(self.text.split())
+        clean_text = re.sub(r'[.,!?;:"]', "", self.text)
+        return np.array(clean_text.split())
 
     def by_chars(self):
-        chars = []
-        for word in self.text.split():
-            chars.extend(list(word))
-            chars.append(" ")
+        chars = np.array([], dtype=int)
+        words = self.text.split()
+        for index, word in enumerate(words):
+            chars = np.append(chars, list(word))
+            if index < len(words) - 1:
+                chars = np.append(chars, " ")
         return chars
 
 
