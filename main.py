@@ -78,25 +78,146 @@ class SRNN:
         self.W_out = np.random.randn(output_dim, hidden_dim) * factor
         self.hidden_state = np.zeros((hidden_dim,))
         self.neuron = Neuron(input_dim, hidden_dim, factor)
+        self.hidden_states = []
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
 
-    def forward(self, input_tokens):
-        for token_id in input_tokens:
-            input_vector = np.zeros((self.W_in.shape[1],))
-            input_vector[token_id] = 1
+    def forward(self, input_tokens, target_tokens):
+        loss = 0
+        self.hidden_state = np.zeros(
+            (self.hidden_dim,)
+        )  # Reset hidden state at beginning
+        self.hidden_states = []  # Clear hidden states history
+
+        for index, token_id in enumerate(input_tokens):
+            # One-hot encode the current token
+            input_vector = np.zeros((self.input_dim,))
+            input_vector[target_tokens[token_id]] = 1
+
+            # Save current hidden state
+            self.hidden_states.append(self.hidden_state)
+            # Update hidden state
             self.hidden_state = self.neuron.step(input_vector, self.hidden_state)
 
-    def predict_next(self):
-        raw_output = self.W_out @ self.hidden_state
-        probabilities = softmax(raw_output)
-        next_token_index = np.argmax(probabilities)
+            # Predict next token
+            raw_output = np.dot(self.W_out, self.hidden_state)
+            predicted_probabilities = softmax(raw_output)
 
-        return next_token_index
+            # Get the actual next token's one-hot encoded vector
+            true_next_token_vector = np.zeros_like(predicted_probabilities)
+
+            # If this is the last token, use the first token as target (for simplicity)
+            next_token_idx = target_tokens[
+                input_tokens[(index + 1) % len(input_tokens)]
+            ]
+            true_next_token_vector[next_token_idx] = 1
+
+            loss += cross_entropy_loss(predicted_probabilities, true_next_token_vector)
+
+        return loss / len(input_tokens)
+
+    def backward(self, input_tokens, target_tokens, learning_rate=0.01):
+        dW_in = np.zeros_like(self.W_in)
+        dW_hidden = np.zeros_like(self.W_hidden)
+        dW_out = np.zeros_like(self.W_out)
+        delta_h_next = np.zeros_like(self.hidden_state)
+
+        for t in reversed(range(len(input_tokens))):
+            input_vector = np.zeros((self.W_in.shape[1],))
+            token_id = target_tokens[input_tokens[t]]
+            input_vector[token_id] = 1
+
+            # Compute output error
+            raw_output = np.dot(self.W_out, self.hidden_states[t])
+            predicted_probabilities = softmax(
+                raw_output - np.max(raw_output)
+            )  # Stable softmax
+            true_next_token_vector = np.zeros_like(predicted_probabilities)
+            true_next_token_vector[target_tokens[input_tokens[t]]] = 1
+            delta_y = predicted_probabilities - true_next_token_vector
+
+            # Update output weights
+            dW_out += np.outer(delta_y, self.hidden_states[t])
+
+            # Backprop to hidden layer
+            delta_h = np.dot(self.W_out.T, delta_y) + delta_h_next
+            # Backprop through tanh
+            tanh_deriv = 1 - self.hidden_states[t] ** 2
+
+            # Clip delta_h early to prevent explosion
+            delta_h = np.clip(delta_h, -10.0, 10.0)
+            delta_h *= tanh_deriv
+
+            dW_in += np.outer(delta_h, input_vector)
+            prev_hidden = (
+                self.hidden_states[t - 1] if t > 0 else np.zeros_like(self.hidden_state)
+            )
+            outer_result = np.outer(delta_h, prev_hidden)
+            dW_hidden += outer_result
+
+            # Next timestep
+            delta_h_next = np.dot(self.W_hidden.T, delta_h)
+
+        # Clip gradients
+        clip_threshold = 1.0
+        for gradient in [dW_in, dW_hidden, dW_out]:
+            np.clip(gradient, -clip_threshold, clip_threshold, out=gradient)
+
+        self.W_in -= learning_rate * dW_in
+        self.W_hidden -= learning_rate * dW_hidden
+        self.W_out -= learning_rate * dW_out
+
+    def predict_next(self, input_tokens):
+        self.hidden_state = np.zeros((self.W_in.shape[0],))
+        # Process input tokens first
+        for token in input_tokens:
+            input_vector = np.zeros((self.W_in.shape[1],))
+            input_vector[token] = 1
+            self.hidden_state = self.neuron.step(input_vector, self.hidden_state)
+
+        raw_output = np.dot(self.W_out, self.hidden_state)
+        probabilities = softmax(raw_output)
+
+        # Return top 3 predictions for variety
+        top_indices = np.argsort(probabilities)[-3:][::-1]
+        # Randomly select from top 3 with probability proportional to softmax
+        top_probs = probabilities[top_indices]
+        top_probs = top_probs / np.sum(top_probs)  # Renormalize
+        chosen_idx = np.random.choice(top_indices, p=top_probs)
+
+        return chosen_idx
+
+    def train(self, input_tokens, target_tokens, epochs=10, learning_rate=0.01):
+        losses = []
+        for epoch in range(epochs):
+            loss = self.forward(input_tokens, target_tokens)
+            self.backward(input_tokens, target_tokens, learning_rate)
+            losses.append(loss)
+
+            if epoch % 10 == 0:
+                print(f"Epoch {epoch + 1}, Loss: {loss:.4f}")
+
+            # Early stopping if loss is increasing for multiple epochs
+            if epoch > 5 and all(losses[-1] > losses[-i - 1] for i in range(1, 4)):
+                print("Loss increasing - stopping early")
+                break
+
+            # Learning rate decay
+            if epoch > 0 and epoch % 20 == 0:
+                learning_rate *= 0.9
+                print(f"Reducing learning rate to {learning_rate}")
 
 
 def softmax(x):
     """Compute softmax values for each sets of scores in x."""
     exp_x = np.exp(x - np.max(x))
     return exp_x / np.sum(exp_x, axis=0)
+
+
+def cross_entropy_loss(y_pred, y_true):
+    y_pred = np.clip(y_pred, 1e-15, 1 - 1e-15)  # Avoid log(0) issues
+    return -np.sum(y_true * np.log(y_pred))
 
 
 def get_key_by_value(dictionary, value):
@@ -119,7 +240,9 @@ if __name__ == "__main__":
     tokens = Tokenizer(text).by_words()
     vocabulary = Vocab(tokens).create()
     input_dim = len(vocabulary)
-    hidden_dim = 5
+    hidden_dim = 100
+    srnn = SRNN(input_dim, hidden_dim, input_dim)
+    srnn.train(tokens, vocabulary, 500)
 
     while True:
         sample = input("> ")
@@ -129,8 +252,6 @@ if __name__ == "__main__":
         test_tokens = Tokenizer(sample).by_words()
         embedded_test_tokens = Embeddings(test_tokens, vocabulary).create()
 
-        rnn = SRNN(input_dim, hidden_dim, input_dim)
-        rnn.forward(embedded_test_tokens)
-        next_token = rnn.predict_next()
+        next_token = srnn.predict_next(embedded_test_tokens)
         next_word = get_key_by_value(vocabulary, next_token)
         print(f"{sample} {next_word}")
