@@ -12,7 +12,8 @@ class Tokenizer:
 
     def by_chars(self):
         chars = np.array([], dtype=int)
-        words = self.text.split()
+        clean_text = re.sub(r'[.,!?;:"]', "", self.text)
+        words = clean_text.split()
         for index, word in enumerate(words):
             chars = np.append(chars, list(word))
             if index < len(words) - 1:
@@ -95,9 +96,7 @@ class SRNN:
             input_vector = np.zeros((self.input_dim,))
             input_vector[target_tokens[token_id]] = 1
 
-            # Save current hidden state
             self.hidden_states.append(self.hidden_state)
-            # Update hidden state
             self.hidden_state = self.neuron.step(input_vector, self.hidden_state)
 
             # Predict next token
@@ -122,17 +121,16 @@ class SRNN:
         dW_hidden = np.zeros_like(self.W_hidden)
         dW_out = np.zeros_like(self.W_out)
         delta_h_next = np.zeros_like(self.hidden_state)
+        clip_threshold = 1.0
 
         for t in reversed(range(len(input_tokens))):
             input_vector = np.zeros((self.W_in.shape[1],))
             token_id = target_tokens[input_tokens[t]]
             input_vector[token_id] = 1
 
-            # Compute output error
             raw_output = np.dot(self.W_out, self.hidden_states[t])
-            predicted_probabilities = softmax(
-                raw_output - np.max(raw_output)
-            )  # Stable softmax
+            predicted_probabilities = softmax(raw_output)
+
             true_next_token_vector = np.zeros_like(predicted_probabilities)
             true_next_token_vector[target_tokens[input_tokens[t]]] = 1
             delta_y = predicted_probabilities - true_next_token_vector
@@ -145,14 +143,17 @@ class SRNN:
             # Backprop through tanh
             tanh_deriv = 1 - self.hidden_states[t] ** 2
 
-            # Clip delta_h early to prevent explosion
-            delta_h = np.clip(delta_h, -10.0, 10.0)
-            delta_h *= tanh_deriv
+            norm = np.linalg.norm(delta_h)  # Compute L2 norm
+            # tries to fix vanishing gradients or exploding gradients
+            # by maintaining direction
+            if norm > clip_threshold:
+                delta_h *= clip_threshold / norm
 
             dW_in += np.outer(delta_h, input_vector)
-            prev_hidden = (
-                self.hidden_states[t - 1] if t > 0 else np.zeros_like(self.hidden_state)
-            )
+            prev_hidden = np.zeros_like(self.hidden_state)
+            if t > 0:
+                prev_hidden = self.hidden_states[t - 1]
+
             outer_result = np.outer(delta_h, prev_hidden)
             dW_hidden += outer_result
 
@@ -160,7 +161,6 @@ class SRNN:
             delta_h_next = np.dot(self.W_hidden.T, delta_h)
 
         # Clip gradients
-        clip_threshold = 1.0
         for gradient in [dW_in, dW_hidden, dW_out]:
             np.clip(gradient, -clip_threshold, clip_threshold, out=gradient)
 
@@ -195,7 +195,7 @@ class SRNN:
             self.backward(input_tokens, target_tokens, learning_rate)
             losses.append(loss)
 
-            if epoch % 10 == 0:
+            if epoch % 50 == 0:
                 print(f"Epoch {epoch + 1}, Loss: {loss:.4f}")
 
             # Early stopping if loss is increasing for multiple epochs
@@ -204,8 +204,8 @@ class SRNN:
                 break
 
             # Learning rate decay
-            if epoch > 0 and epoch % 20 == 0:
-                learning_rate *= 0.9
+            if epoch > 0 and epoch % 10 == 0:
+                learning_rate *= 0.95
                 print(f"Reducing learning rate to {learning_rate}")
 
 
@@ -240,18 +240,21 @@ if __name__ == "__main__":
     tokens = Tokenizer(text).by_words()
     vocabulary = Vocab(tokens).create()
     input_dim = len(vocabulary)
-    hidden_dim = 100
+    hidden_dim = 200
     srnn = SRNN(input_dim, hidden_dim, input_dim)
-    srnn.train(tokens, vocabulary, 500)
+    srnn.train(tokens, vocabulary, 400)
 
     while True:
         sample = input("> ")
         if sample == "q":
             break
 
-        test_tokens = Tokenizer(sample).by_words()
-        embedded_test_tokens = Embeddings(test_tokens, vocabulary).create()
+        for c in range(2):
+            test_tokens = Tokenizer(sample).by_words()
+            embedded_test_tokens = Embeddings(test_tokens, vocabulary).create()
 
-        next_token = srnn.predict_next(embedded_test_tokens)
-        next_word = get_key_by_value(vocabulary, next_token)
-        print(f"{sample} {next_word}")
+            next_token = srnn.predict_next(embedded_test_tokens)
+            next_word = get_key_by_value(vocabulary, next_token)
+            sample = f"{sample} {next_word}"
+
+        print(f"{sample}")
