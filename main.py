@@ -1,5 +1,8 @@
 import numpy as np
 import re
+import sys
+import os
+import pickle
 
 
 class Tokenizer:
@@ -83,6 +86,18 @@ class SRNN:
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
+
+    def save_model(self, file="sww.pkl"):
+        with open(file, "wb") as f:
+            pickle.dump(self, f)
+        print(f"Model saved to {file}")
+
+    @staticmethod
+    def load_model(file="sww.pkl"):
+        with open(file, "rb") as f:
+            model = pickle.load(f)
+        print(f"Model loaded from {file}")
+        return model
 
     def forward(self, input_tokens, target_tokens):
         loss = 0
@@ -236,25 +251,37 @@ def load_base_text(file: str) -> str:
 
 
 if __name__ == "__main__":
+    sww_pkl_file = "sww.pkl"
+
     text = load_base_text("./sw.txt")
     tokens = Tokenizer(text).by_words()
     vocabulary = Vocab(tokens).create()
     input_dim = len(vocabulary)
-    hidden_dim = 200
+    hidden_dim = 150
     srnn = SRNN(input_dim, hidden_dim, input_dim)
-    srnn.train(tokens, vocabulary, 400)
 
-    while True:
-        sample = input("> ")
-        if sample == "q":
-            break
+    args = sys.argv
+    if len(args) != 2:
+        print("Expected at least one arg [train|inf]")
+        os.Exit(1)
 
-        for c in range(2):
+    if args[1] == "train":
+        if os.path.isfile(sww_pkl_file):
+            srnn = SRNN.load_model(sww_pkl_file)
+
+        srnn.train(tokens, vocabulary, 300)
+        srnn.save_model(sww_pkl_file)
+    elif args[1] == "inf":
+        srnn.load_model(sww_pkl_file)
+        while True:
+            sample = input("> ")
+            if sample == "q":
+                break
+
             test_tokens = Tokenizer(sample).by_words()
             embedded_test_tokens = Embeddings(test_tokens, vocabulary).create()
 
             next_token = srnn.predict_next(embedded_test_tokens)
             next_word = get_key_by_value(vocabulary, next_token)
-            sample = f"{sample} {next_word}"
 
-        print(f"{sample}")
+            print(f"{sample} {next_word}")
