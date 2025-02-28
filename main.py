@@ -220,7 +220,7 @@ class SRNN:
 
             # Learning rate decay
             if epoch > 0 and epoch % 10 == 0:
-                learning_rate *= 0.95
+                learning_rate = max(learning_rate * 0.9, 0.0001)
                 print(f"Reducing learning rate to {learning_rate}")
 
 
@@ -233,13 +233,6 @@ def softmax(x):
 def cross_entropy_loss(y_pred, y_true):
     y_pred = np.clip(y_pred, 1e-15, 1 - 1e-15)  # Avoid log(0) issues
     return -np.sum(y_true * np.log(y_pred))
-
-
-def get_key_by_value(dictionary, value):
-    for key, val in dictionary.items():
-        if val == value:
-            return key
-    return None
 
 
 def load_base_text(file: str) -> str:
@@ -273,15 +266,19 @@ if __name__ == "__main__":
         srnn.save_model(sww_pkl_file)
     elif args[1] == "inf":
         srnn.load_model(sww_pkl_file)
+        reverse_vocab = {v: k for k, v in vocabulary.items()}
+
         while True:
             sample = input("> ")
             if sample == "q":
                 break
 
-            test_tokens = Tokenizer(sample).by_words()
-            embedded_test_tokens = Embeddings(test_tokens, vocabulary).create()
+            for count in range(5):
+                test_tokens = Tokenizer(sample).by_words()
+                embedded_test_tokens = Embeddings(test_tokens, vocabulary).create()
 
-            next_token = srnn.predict_next(embedded_test_tokens)
-            next_word = get_key_by_value(vocabulary, next_token)
+                next_token = srnn.predict_next(embedded_test_tokens)
+                next_word = reverse_vocab.get(next_token, "<UNK>")
+                sample = f"{sample} {next_word}"
 
-            print(f"{sample} {next_word}")
+            print(f"{sample}")
