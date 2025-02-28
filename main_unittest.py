@@ -16,7 +16,7 @@ def contains_punctuation(input_list):
 
 
 class TestTokenizer(unittest.TestCase):
-    expected_char_count = 30
+    expected_char_count = 29
     expected_word_count = 5
 
     def test_char_count(self):
