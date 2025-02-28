@@ -263,7 +263,7 @@ if __name__ == "__main__":
     args = sys.argv
     if len(args) != 2:
         print("Expected at least one arg [train|inf]")
-        os.Exit(1)
+        sys.exit(1)
 
     if args[1] == "train":
         if os.path.isfile(sww_pkl_file):
