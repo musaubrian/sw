@@ -95,10 +95,6 @@ class SRNN:
 
     def forward(self, input_tokens, target_tokens):
         loss = 0
-        self.hidden_state = np.zeros(
-            (self.hidden_dim,)
-        )  # Reset hidden state at beginning
-        self.hidden_states = []  # Clear hidden states history
 
         for index, token_id in enumerate(input_tokens):
             # One-hot encode the current token
