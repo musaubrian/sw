@@ -1,7 +1,7 @@
 # sw
 
-This is an attempt at creating a model/ next token predictor for swahili, because my
-keyboard supports adding new models, but most models are in and for english.
+This is an attempt at creating a model/ next token predictor for swahili,
+because I thought it would be neat
 
 > [!WARNING]
 >

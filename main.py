@@ -30,12 +30,10 @@ class Vocab:
         self.vocabulary: dict[str, int] = {"<UNK>": 0}
 
     def create(self):
-        id = len(self.vocabulary)
-        for token in self.tokens:
-            if token not in self.vocabulary:
-                self.vocabulary[token] = id
-                id += 1
-
+        unique_tokens = set(self.tokens)
+        self.vocabulary.update(
+            {token: idx for idx, token in enumerate(unique_tokens, start=1)}
+        )
         return self.vocabulary
 
 
@@ -46,13 +44,9 @@ class Embeddings:
         self.embeddings = np.array([], dtype=int)
 
     def create(self) -> np.array:
-        for token in self.tokens:
-            if token not in self.vocab:
-                self.embeddings = np.append(self.embeddings, self.vocab["<UNK>"])
-            else:
-                self.embeddings = np.append(self.embeddings, self.vocab[token])
-
-        return self.embeddings
+        return np.vectorize(lambda token: self.vocab.get(token, self.vocab["<UNK>"]))(
+            self.tokens
+        )
 
 
 class Neuron:
@@ -150,12 +144,12 @@ class SRNN:
             true_next_token_vector[target_tokens[input_tokens[t]]] = 1
             delta_y = predicted_probabilities - true_next_token_vector
 
-            # Update output weights
+            # update output weights
             dW_out += np.outer(delta_y, self.hidden_states[t])
 
-            # Backprop to hidden layer
+            # backprop to hidden layer
             delta_h = np.dot(self.W_out.T, delta_y) + delta_h_next
-            # Backprop through tanh
+            # backprop through tanh
             tanh_deriv = 1 - self.hidden_states[t] ** 2
 
             norm = np.linalg.norm(delta_h)  # Compute L2 norm
@@ -172,10 +166,10 @@ class SRNN:
             outer_result = np.outer(delta_h, prev_hidden)
             dW_hidden += outer_result
 
-            # Next timestep
+            # next timestep
             delta_h_next = np.dot(self.W_hidden.T, delta_h)
 
-        # Clip gradients
+        # clip gradients
         for gradient in [dW_in, dW_hidden, dW_out]:
             np.clip(gradient, -clip_threshold, clip_threshold, out=gradient)
 
@@ -185,7 +179,7 @@ class SRNN:
 
     def predict_next(self, input_tokens):
         self.hidden_state = np.zeros((self.W_in.shape[0],))
-        # Process input tokens first
+        # process input tokens first
         for token in input_tokens:
             input_vector = np.zeros((self.W_in.shape[1],))
             input_vector[token] = 1
@@ -194,34 +188,35 @@ class SRNN:
         raw_output = np.dot(self.W_out, self.hidden_state)
         probabilities = softmax(raw_output)
 
-        # Return top 3 predictions for variety
+        # return top 3 predictions for variety
         top_indices = np.argsort(probabilities)[-3:][::-1]
-        # Randomly select from top 3 with probability proportional to softmax
+        # randomly select from top 3 with probability proportional to softmax
         top_probs = probabilities[top_indices]
         top_probs = top_probs / np.sum(top_probs)  # Renormalize
         chosen_idx = np.random.choice(top_indices, p=top_probs)
 
         return chosen_idx
 
-    def train(self, input_tokens, target_tokens, epochs=10, learning_rate=0.01):
-        losses = []
+    def train(self, input_tokens, target_tokens, epochs=100, learning_rate=0.01):
+        prev_losses = [float("inf")] * 3  # Track last three losses
+
         for epoch in range(epochs):
             loss = self.forward(input_tokens, target_tokens)
             self.backward(input_tokens, target_tokens, learning_rate)
-            losses.append(loss)
 
             if epoch % 50 == 0:
                 print(f"Epoch {epoch + 1}, Loss: {loss:.4f}")
 
-            # Early stopping if loss is increasing for multiple epochs
-            if epoch > 5 and all(losses[-1] > losses[-i - 1] for i in range(1, 4)):
+            if loss > max(prev_losses):
                 print("Loss increasing - stopping early")
                 break
 
-            # Learning rate decay
-            if epoch > 0 and epoch % 10 == 0:
-                learning_rate = max(learning_rate * 0.9, 0.0001)
-                print(f"Reducing learning rate to {learning_rate}")
+            prev_losses = prev_losses[1:] + [loss]  # Shift losses
+
+            # learning rate decay every 10 epochs
+            if epoch % 10 == 0:
+                learning_rate = max(learning_rate * 0.9, 0.001)
+                print(f"Reducing learning rate to {learning_rate:.6f}")
 
 
 def softmax(x):
@@ -246,7 +241,7 @@ def load_base_text(file: str) -> str:
 if __name__ == "__main__":
     sww_pkl_file = "sww.pkl"
 
-    text = load_base_text("./sw.txt")
+    text = load_base_text("sw.txt")
     tokens = Tokenizer(text).by_words()
     vocabulary = Vocab(tokens).create()
     input_dim = len(vocabulary)
@@ -262,7 +257,7 @@ if __name__ == "__main__":
         if os.path.isfile(sww_pkl_file):
             srnn = SRNN.load_model(sww_pkl_file)
 
-        srnn.train(tokens, vocabulary, 300)
+        srnn.train(tokens, vocabulary, 500)
         srnn.save_model(sww_pkl_file)
     elif args[1] == "inf":
         srnn.load_model(sww_pkl_file)
