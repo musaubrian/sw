@@ -1,8 +1,15 @@
 import numpy as np
+import string
 import re
 import sys
 import os
 import pickle
+
+
+def strip_punctuation(text):
+    translator = str.maketrans("", "", string.punctuation)
+
+    return text.translate(translator)
 
 
 class Tokenizer:
@@ -10,18 +17,12 @@ class Tokenizer:
         self.text: str = text.lower().strip()
 
     def by_words(self) -> np.array:
-        clean_text = re.sub(r'[.,!?;:"]', "", self.text)
+        clean_text = strip_punctuation(self.text)
         return np.array(clean_text.split())
 
     def by_chars(self):
-        chars = np.array([], dtype=int)
-        clean_text = re.sub(r'[.,!?;:"]', "", self.text)
-        words = clean_text.split()
-        for index, word in enumerate(words):
-            chars = np.append(chars, list(word))
-            if index < len(words) - 1:
-                chars = np.append(chars, " ")
-        return chars
+        clean_text = strip_punctuation(self.text)
+        return np.array(list(clean_text), dtype=str)
 
 
 class Vocab:
@@ -241,7 +242,7 @@ if __name__ == "__main__":
     tokens = Tokenizer(text).by_words()
     vocabulary = Vocab(tokens).create()
     input_dim = len(vocabulary)
-    hidden_dim = 150
+    hidden_dim = 300
     srnn = SRNN(input_dim, hidden_dim, input_dim)
 
     args = sys.argv
@@ -253,7 +254,7 @@ if __name__ == "__main__":
         if os.path.isfile(sww_pkl_file):
             srnn = SRNN.load_model(sww_pkl_file)
 
-        srnn.train(tokens, vocabulary, 500)
+        srnn.train(tokens, vocabulary, 250)
         srnn.save_model(sww_pkl_file)
     elif args[1] == "inf":
         srnn.load_model(sww_pkl_file)
@@ -264,11 +265,15 @@ if __name__ == "__main__":
             if sample == "q":
                 break
 
-            for count in range(5):
-                test_tokens = Tokenizer(sample).by_words()
-                embedded_test_tokens = Embeddings(test_tokens, vocabulary).create()
+            for count in range(4):
+                sample_tokens = Tokenizer(sample).by_words()
+                if len(sample_tokens) == 0:
+                    print("Either prompt is empty or only punctuation")
+                    break
 
-                next_token = srnn.predict_next(embedded_test_tokens)
+                embedded_sample_tokens = Embeddings(sample_tokens, vocabulary).create()
+
+                next_token = srnn.predict_next(embedded_sample_tokens)
                 next_word = reverse_vocab.get(next_token, "<UNK>")
                 sample = f"{sample} {next_word}"
 
